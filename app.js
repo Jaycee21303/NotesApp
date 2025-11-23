@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, updateDoc } 
-  from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { 
+  getFirestore, collection, addDoc, getDocs, doc, deleteDoc, updateDoc 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAafPQT_OGr-2vfuIr13DOOZLjrsTQCO6o",
@@ -16,15 +17,68 @@ const db = getFirestore(app);
 
 let currentTopicId = null;
 
+// -------------------- TOPICS --------------------
+
 async function loadTopics() {
   const list = document.getElementById("topics");
   list.innerHTML = "";
   const snap = await getDocs(collection(db, "topics"));
+
   snap.forEach(docu => {
+    const topicData = docu.data();
+
     const li = document.createElement("li");
-    li.textContent = docu.data().name;
-    li.onclick = () => selectTopic(docu.id, docu.data().name);
+    li.className = "topic-item";
+    
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = topicData.name;
+    nameSpan.style.cursor = "pointer";
+    nameSpan.onclick = () => selectTopic(docu.id, topicData.name);
+
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "Edit";
+    editBtn.onclick = async () => {
+      const newName = prompt("Rename topic:", topicData.name);
+      if (newName) {
+        await updateDoc(doc(db, "topics", docu.id), { name: newName });
+        if (currentTopicId === docu.id) {
+          document.getElementById("topicTitle").textContent = newName;
+        }
+        loadTopics();
+      }
+    };
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = "Delete";
+    deleteBtn.style.background = "#d9534f";
+    deleteBtn.onclick = async () => {
+      if (confirm("Delete this topic and ALL its notes?")) {
+
+        // Delete all notes inside this topic
+        const notesSnap = await getDocs(collection(db, "topics", docu.id, "notes"));
+        for (let n of notesSnap.docs) {
+          await deleteDoc(doc(db, "topics", docu.id, "notes", n.id));
+        }
+
+        // Delete the topic
+        await deleteDoc(doc(db, "topics", docu.id));
+
+        if (currentTopicId === docu.id) {
+          currentTopicId = null;
+          document.getElementById("topicTitle").textContent = "Select a topic";
+          document.getElementById("notes").innerHTML = "";
+          document.getElementById("addNoteBtn").classList.add("hidden");
+        }
+        loadTopics();
+      }
+    };
+
+    li.appendChild(nameSpan);
+    li.appendChild(editBtn);
+    li.appendChild(deleteBtn);
+
     if (docu.id === currentTopicId) li.classList.add("active");
+
     list.appendChild(li);
   });
 }
@@ -37,18 +91,56 @@ async function selectTopic(id, name) {
   loadTopics();
 }
 
+// -------------------- NOTES --------------------
+
 async function loadNotes() {
   const container = document.getElementById("notes");
   container.innerHTML = "";
   if (!currentTopicId) return;
+
   const snap = await getDocs(collection(db, "topics", currentTopicId, "notes"));
+
   snap.forEach(docu => {
-    const n = document.createElement("div");
-    n.className = "note";
-    n.textContent = docu.data().text;
-    container.appendChild(n);
+    const data = docu.data();
+    const noteDiv = document.createElement("div");
+    noteDiv.className = "note";
+
+    const text = document.createElement("div");
+    text.textContent = data.text;
+    text.style.marginBottom = "8px";
+
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "Edit";
+    editBtn.style.marginRight = "5px";
+    editBtn.onclick = async () => {
+      const newText = prompt("Edit note:", data.text);
+      if (newText) {
+        await updateDoc(
+          doc(db, "topics", currentTopicId, "notes", docu.id),
+          { text: newText }
+        );
+        loadNotes();
+      }
+    };
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.textContent = "Delete";
+    deleteBtn.style.background = "#d9534f";
+    deleteBtn.onclick = async () => {
+      if (confirm("Delete this note?")) {
+        await deleteDoc(doc(db, "topics", currentTopicId, "notes", docu.id));
+        loadNotes();
+      }
+    };
+
+    noteDiv.appendChild(text);
+    noteDiv.appendChild(editBtn);
+    noteDiv.appendChild(deleteBtn);
+    container.appendChild(noteDiv);
   });
 }
+
+// -------------------- BUTTON ACTIONS --------------------
 
 document.getElementById("addTopicBtn").onclick = async () => {
   const name = prompt("Topic name:");
